@@ -1,0 +1,20 @@
+ngx_addon_name=ngx_stream_ebpf_module
+ngx_module_libs=
+
+NGX_ADDON_STREAM_EBPF_SRCS="                                                 \
+               $ngx_addon_dir/src/ngx_stream_ebpf_module.c \
+               "
+NGX_ADDON_STREAM_EBPF_INCLUDE="                                                 \
+               $ngx_addon_dir/src/ \
+               $ngx_addon_dir/src/ebpf \
+               "
+if [ $ngx_module_link = ADDON ] ; then
+    ngx_module_type=STREAM
+    ngx_module_name=$ngx_addon_name
+    ngx_module_srcs=$NGX_ADDON_STREAM_EBPF_SRCS
+    ngx_module_incs=$NGX_ADDON_STREAM_EBPF_INCLUDE
+    . auto/module
+else
+    echo "only support static link"
+    exit 1
+fi
