@@ -1,0 +1,4 @@
+echo "compiling libbpf for stream ebpf module"
+
+libpf_install_absolute_path="$dep_absolute_path/.libbpf"
+cd $ngx_addon_dir/src/dep/libbpf/src && make clean && DESTDIR=$libpf_install_absolute_path BUILD_STATIC_ONLY=y make -j install && cd -

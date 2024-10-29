@@ -1,0 +1,36 @@
+ngx_ebpf_kern_src="$ngx_addon_dir/src/ebpf/ebpf_kern.c"
+ngx_ebpf_kern_obj="$ngx_addon_dir/src/ebpf/ebpf_kern.o"
+ngx_ebpf_kern_obj_c="$ngx_addon_dir/src/ebpf/ebpf_kern.obj.c" 
+ngx_ebpf_kern_obj_var_name="ebpf_kern_o"
+ngx_ebpf_kern_obj_var_len_name="ebpf_kern_o_len"
+
+# for btf, -g must be used
+if [ $NGX_DEBUG = YES ]; then
+    DEBUG_FLAG=-DEBPF_DEBUG
+fi
+
+# compile ebpf code
+set -x
+clang --version
+clang $DEBUG_FLAG -I$libpf_install_absolute_path/usr/include/bpf  -Wno-deprecated-declarations -target bpf -O2 -c -o $ngx_ebpf_kern_obj $ngx_ebpf_kern_src || exit
+
+# transfer ebpf object to hex array to avoid deploying seperate obj file
+# xxd will generate C code like this:
+# '
+# unsigned char ebpf_kern_o[] = {
+# 0x7f, ...};
+# unsigned int ebpf_kern_o_len = ...;
+# '
+# we can't specify variable name unless https://github.com/vim/vim/pull/10599 released
+# xxd -i $ngx_ebpf_kern_obj > $ngx_ebpf_kern_obj_c
+echo "unsigned char $ngx_ebpf_kern_obj_var_name[] = {" > $ngx_ebpf_kern_obj_c
+cat $ngx_ebpf_kern_obj | xxd -i >> $ngx_ebpf_kern_obj_c
+echo "};" >> $ngx_ebpf_kern_obj_c
+obj_len=`cat $ngx_ebpf_kern_obj | xxd -i | grep -o "0x"  | wc -l`
+echo "unsigned int $ngx_ebpf_kern_obj_var_len_name = $obj_len;" >> $ngx_ebpf_kern_obj_c
+set +x
+
+have=NGX_EBPF_KERN_OBJ_DEFINE value="extern unsigned char $ngx_ebpf_kern_obj_var_name[];" . auto/define
+have=NGX_EBPF_KERN_OBJ_LEN_DEFINE value="extern unsigned int $ngx_ebpf_kern_obj_var_len_name;" . auto/define
+have=NGX_EBPF_KERN_OBJ value="$ngx_ebpf_kern_obj_var_name" . auto/define
+have=NGX_EBPF_KERN_OBJ_LEN value="$ngx_ebpf_kern_obj_var_len_name" . auto/define

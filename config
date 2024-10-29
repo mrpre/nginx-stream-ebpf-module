@@ -1,18 +1,36 @@
 ngx_addon_name=ngx_stream_ebpf_module
 ngx_module_libs=
 
-NGX_ADDON_STREAM_EBPF_SRCS="                                                 \
-               $ngx_addon_dir/src/ngx_stream_ebpf_module.c \
+# compile libbpf and utils
+dep_absolute_path="$PWD/$ngx_addon_dir/src/dep"
+libpf_install_absolute_path=
+. $ngx_addon_dir/src/dep/config
+
+# ebpf obj array generate by xxd command
+ngx_ebpf_kern_obj_c=
+. $ngx_addon_dir/src/ebpf/config
+
+NGX_ADDON_STREAM_EBPF_SRCS="                                            \
+               $ngx_addon_dir/src/ngx_stream_ebpf_module.c              \
+               $ngx_addon_dir/src/ebpf/bpf_utils.c                      \
+               $ngx_addon_dir/src/ngx_ebpf.c                            \
+               $ngx_ebpf_kern_obj_c                                     \
                "
-NGX_ADDON_STREAM_EBPF_INCLUDE="                                                 \
-               $ngx_addon_dir/src/ \
-               $ngx_addon_dir/src/ebpf \
+NGX_ADDON_STREAM_EBPF_INCLUDE="                                         \
+               $ngx_addon_dir/src/                                      \
+               $ngx_addon_dir/src/ebpf                                  \
+               $libpf_install_absolute_path/usr/include/                \
                "
+
+# compile stream module
 if [ $ngx_module_link = ADDON ] ; then
     ngx_module_type=STREAM
     ngx_module_name=$ngx_addon_name
     ngx_module_srcs=$NGX_ADDON_STREAM_EBPF_SRCS
     ngx_module_incs=$NGX_ADDON_STREAM_EBPF_INCLUDE
+    ngx_module_deps=$ngx_addon_dir/src/ebpf/bpf_utils.h
+    CORE_LIBS="$CORE_LIBS $libpf_install_absolute_path/usr/lib64/libbpf.a -lelf"
+    #LINK_DEPS="$LINK_DEPS $libpf_install_absolute_path/usr/lib64/libbpf.a"
     . auto/module
 else
     echo "only support static link"
