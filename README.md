@@ -2,7 +2,12 @@
 
 A module that use ebpf to accelerate nginx stream proxy forward. The usage is at the end of article.  
 The main principle is that zero hack for Nginx source code and provide a separated module to accelerate stream proxy.  
-Test success from nginx-1.15.0 to latest(nginx-1.27.0)
+Test success from nginx-1.15.0 to latest(nginx-1.27.0) with kernel version >= 4.18.
+
+Note that the latest kernel version (near 6.9) has defect with sockmap, I have send a patch to fix it, do not use
+latest kernel before it's merged and released.  
+
+patch: https://git.kernel.org/bpf/bpf/c/2ce9abd6e1e1  
 
 # Performance Test
 
@@ -245,11 +250,14 @@ static void sk_psock_backlog(struct work_struct *work)
 
 # Usage
 
+## build dependency 
+`clang elfutils-libelf-devel`
+
 ```
 # download current module
-git clone --recurse-submodules github.com/mrpre/nginx-stream-ebpf-module.git
+git clone --recurse-submodules https://ithub.com/mrpre/nginx-stream-ebpf-module.git
 
-# enter nginx source tree then use --add-module to add module
+# enter Nginx source tree then use --add-module to add the module you download before.
 # eBPF and it's dependency will be compiled at configure time
 ./configure --add-module=/PATH/nginx-stream-ebpf-module --with-stream --prefix=/root/nginxbuild/
 
