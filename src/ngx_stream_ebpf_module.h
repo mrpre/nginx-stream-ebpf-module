@@ -15,6 +15,8 @@ struct ngx_stream_ebpf_obj_ctx {
     void *bpf_object;
     int proxy_map_fd;
     int sockmap_fd;
+    int sockhash_fd;
+    int map_fd;
     int meta_fd;
     int prog_redirect_fd;
     int prog_parser_fd;

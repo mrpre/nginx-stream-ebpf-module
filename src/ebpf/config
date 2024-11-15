@@ -9,10 +9,13 @@ if [ $NGX_DEBUG = YES ]; then
     DEBUG_FLAG=-DEBPF_DEBUG
 fi
 
+# enable it to use sockhash
+# USE_SOCKHASH=-DEBPF_USE_SOCKHASH
+
 # compile ebpf code
 set -x
 clang --version
-clang $DEBUG_FLAG -I$libpf_install_absolute_path/usr/include/bpf  -Wno-deprecated-declarations -target bpf -O2 -c -o $ngx_ebpf_kern_obj $ngx_ebpf_kern_src || exit
+clang $USE_SOCKHASH $DEBUG_FLAG -I$libpf_install_absolute_path/usr/include/bpf  -Wno-deprecated-declarations -target bpf -O2 -c -o $ngx_ebpf_kern_obj $ngx_ebpf_kern_src || exit
 
 # transfer ebpf object to hex array to avoid deploying seperate obj file
 # xxd will generate C code like this:

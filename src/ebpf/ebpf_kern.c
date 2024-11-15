@@ -6,7 +6,7 @@
 #define EBPF_MAP_SIZE 100000
 #define USE_BPF_MAP 1
 //#define EBPF_DEBUG 1 enable by compiler
-
+//#define  EBPF_USE_SOCKHASH 1  enable by compiler
 #ifdef USE_BPF_MAP
 
 #if LIBBPF_MAJOR_VERSION > 1
@@ -34,12 +34,23 @@ struct bpf_map_def SEC ("maps") meta_map = {
 };
 
 
+#ifdef EBPF_USE_SOCKHASH
+//see sock_hash_alloc, key size can be customized
+struct bpf_map_def SEC ("maps") sock_hash = {
+    . type = BPF_MAP_TYPE_SOCKHASH ,
+    . key_size = sizeof(__u32),
+    . value_size = sizeof(__u32),
+    . max_entries = EBPF_MAP_SIZE,
+};
+#else
+//see sock_map_alloc, key size must be u32 and value_size must be u32 or u64
 struct bpf_map_def SEC ("maps") sock_map = {
     . type = BPF_MAP_TYPE_SOCKMAP ,
     . key_size = sizeof(__u32),
     . value_size = sizeof(__u32),
     . max_entries = EBPF_MAP_SIZE,
 };
+#endif
 #elif USE_BTF_MAP
 
 struct {
@@ -117,7 +128,11 @@ int stream_verdict(struct __sk_buff * skb)
     }
     // for the received packet, redirect it from a receive queue of some socket
     // to a transmit queue of the socket living in sock_map under *index
+#ifdef EBPF_USE_SOCKHASH
+    int ret = bpf_sk_redirect_hash(skb, &sock_hash, index , 0);
+#else
     int ret = bpf_sk_redirect_map(skb, &sock_map, *index , 0);
+#endif
     if (ret == SK_PASS) {
         struct ngx_sock_meta *meta = bpf_map_lookup_elem(&meta_map, index);
         if (meta == NULL) {

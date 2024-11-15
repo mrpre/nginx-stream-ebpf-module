@@ -135,7 +135,7 @@ int ngx_ebpf_unregister_sockmap_fd(ngx_log_t *log, struct ngx_stream_ebpf_obj_ct
 	
 	int err;
 	__u32 idx = ngx_get_connection_id(c);
-	err = bpf_map_delete_elem(global_ctx->sockmap_fd, &idx);
+	err = bpf_map_delete_elem(global_ctx->map_fd, &idx);
 	if (err < 0 && errno != EINVAL) {
 		ngx_log_error(NGX_LOG_ERR, log, errno, NGX_STREAM_LOG_PREFIX"delete client sock map failed, %d", err);
 	}
@@ -145,7 +145,7 @@ int ngx_ebpf_unregister_sockmap_fd(ngx_log_t *log, struct ngx_stream_ebpf_obj_ct
 
 	idx = ngx_get_connection_id(pc);
 
-	err = bpf_map_delete_elem(global_ctx->sockmap_fd, &idx);
+	err = bpf_map_delete_elem(global_ctx->map_fd, &idx);
 	if (err < 0 && errno != EINVAL) {
 		ngx_log_error(NGX_LOG_ERR, log, errno, NGX_STREAM_LOG_PREFIX"delete upstream sock map failed, %d", err);
 	}
@@ -185,8 +185,8 @@ int ngx_ebpf_register_sockmap_fd(ngx_log_t *log, struct ngx_stream_ebpf_obj_ctx 
 	__u32 idx = ngx_get_connection_id(c);
 	__u32 fd =  c->fd;
 	//__u64 target_cpu = 10;
-	if (bpf_map_update_elem(global_ctx->sockmap_fd, &idx, &fd, BPF_ANY) < 0) {
-	//if (bpf_map_update_elem_cpu(global_ctx->sockmap_fd, &idx, &fd, BPF_ANY, &target_cpu) < 0) {
+	if (bpf_map_update_elem(global_ctx->map_fd, &idx, &fd, BPF_ANY) < 0) {
+	//if (bpf_map_update_elem_cpu(global_ctx->map_fd, &idx, &fd, BPF_ANY, &target_cpu) < 0) {
 		ngx_log_error(NGX_LOG_ERR, log, errno, NGX_STREAM_LOG_PREFIX" call 'bpf_map_update_elem' fail");
 		return NGX_ERROR;
 	}
@@ -196,8 +196,8 @@ int ngx_ebpf_register_sockmap_fd(ngx_log_t *log, struct ngx_stream_ebpf_obj_ctx 
 	idx = ngx_get_connection_id(pc);
 	fd = pc->fd;
 	//target_cpu = 11;
-	if (bpf_map_update_elem(global_ctx->sockmap_fd, &idx, &fd, BPF_ANY) < 0) {
-	//if (bpf_map_update_elem_cpu(global_ctx->sockmap_fd, &idx, &fd, BPF_ANY, &target_cpu) < 0) {
+	if (bpf_map_update_elem(global_ctx->map_fd, &idx, &fd, BPF_ANY) < 0) {
+	//if (bpf_map_update_elem_cpu(global_ctx->map_fd, &idx, &fd, BPF_ANY, &target_cpu) < 0) {
 		ngx_log_error(NGX_LOG_ERR, log, errno, NGX_STREAM_LOG_PREFIX" call 'bpf_map_update_elem' fail");
 		return NGX_ERROR;
 	}
@@ -252,8 +252,10 @@ struct ngx_stream_ebpf_obj_ctx * ngx_ebpf_init(ngx_log_t *log) {
 
 	// attach prog
 	int sockmap_fd = bpf_object__find_map_fd_by_name(obj, "sock_map");
+	int sockhash_fd = bpf_object__find_map_fd_by_name(obj, "sock_hash");
 	int proxymap_fd = bpf_object__find_map_fd_by_name(obj, "proxy_map");
 	int metamap_fd = bpf_object__find_map_fd_by_name(obj, "meta_map");
+	int map_fd;
 	prog_paser = bpf_object__find_program_by_name(obj, "stream_parser");
 	if (prog_paser == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, log, errno,
@@ -261,13 +263,22 @@ struct ngx_stream_ebpf_obj_ctx * ngx_ebpf_init(ngx_log_t *log) {
 		return NULL;
 	}
 
-	err = bpf_prog_attach(bpf_program__fd(prog_paser), sockmap_fd , BPF_SK_SKB_STREAM_PARSER, 0);
+	if (sockmap_fd > 0) {
+		map_fd =  sockmap_fd;
+	} else if (sockhash_fd > 0) {
+		map_fd = sockhash_fd;
+	} else {
+		ngx_log_error(NGX_LOG_EMERG, log, errno,
+							NGX_STREAM_LOG_PREFIX"can not find sockmap or sockhash in ebpf kern code");
+		return NULL;
+	}
+
+	err = bpf_prog_attach(bpf_program__fd(prog_paser), map_fd , BPF_SK_SKB_STREAM_PARSER, 0);
 	if (err) {
 		ngx_log_error(NGX_LOG_EMERG, log, errno,
 							NGX_STREAM_LOG_PREFIX"call 'bpf_object__find_program_by_name' fail, error code %d", err);
 		return NULL;
 	}
-	
 	prog_redirect = bpf_object__find_program_by_name(obj, "stream_verdict");
 	if (prog_redirect == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, log, errno,
@@ -275,14 +286,14 @@ struct ngx_stream_ebpf_obj_ctx * ngx_ebpf_init(ngx_log_t *log) {
 		return NULL;
 	}
 	
-	err = bpf_prog_attach(bpf_program__fd(prog_redirect), sockmap_fd , BPF_SK_SKB_STREAM_VERDICT, 0);
+	err = bpf_prog_attach(bpf_program__fd(prog_redirect), map_fd , BPF_SK_SKB_STREAM_VERDICT, 0);
 	if (err) {
 		ngx_log_error(NGX_LOG_EMERG, log, errno,
 							NGX_STREAM_LOG_PREFIX"call 'bpf_prog_attach' fail, error code %d", err);
 		return NULL;
 	}
 	ngx_log_error(NGX_LOG_INFO, log, 0,
-							NGX_STREAM_LOG_PREFIX"attach nginx stream ebpf code success, fd %d %d %d", sockmap_fd, proxymap_fd, metamap_fd);
+							NGX_STREAM_LOG_PREFIX"attach nginx stream ebpf code success, fd %d/%d %d %d", sockmap_fd, sockhash_fd, proxymap_fd, metamap_fd);
 
 	global_ctx = ngx_alloc(sizeof(*global_ctx), log);
 	if (global_ctx == NULL) {
@@ -294,6 +305,8 @@ struct ngx_stream_ebpf_obj_ctx * ngx_ebpf_init(ngx_log_t *log) {
 	global_ctx->bpf_object = obj;
 	global_ctx->proxy_map_fd = proxymap_fd;
 	global_ctx->sockmap_fd = sockmap_fd;
+	global_ctx->sockhash_fd = sockhash_fd;
+	global_ctx->map_fd = map_fd;
 	global_ctx->meta_fd = metamap_fd;
 	global_ctx->prog_parser_fd = bpf_program__fd(prog_paser);
 	global_ctx->prog_redirect_fd = bpf_program__fd(prog_redirect);

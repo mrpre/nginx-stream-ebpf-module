@@ -9,6 +9,7 @@ typedef struct {
     ngx_stream_content_handler_pt   handler;
     ngx_resolver_handler_pt         resolver_handler;
     ngx_uint_t                      timeout;
+    ngx_uint_t                      buffer_size;
     ngx_uint_t                      timer_period;
     ngx_str_t                       addr;
 } ngx_stream_ebpf_srv_conf_t;
@@ -54,6 +55,13 @@ static ngx_command_t  ngx_stream_ebpf_commands[] = {
       ngx_conf_set_msec_slot,
       NGX_STREAM_SRV_CONF_OFFSET,
       offsetof(ngx_stream_ebpf_srv_conf_t, timeout),
+      NULL },
+
+    { ngx_string("ebpf_proxy_buffer_size"),
+      NGX_STREAM_MAIN_CONF|NGX_STREAM_SRV_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_msec_slot,
+      NGX_STREAM_SRV_CONF_OFFSET,
+      offsetof(ngx_stream_ebpf_srv_conf_t, buffer_size),
       NULL },
 
      { ngx_string("ebpf_timer_period"),
@@ -139,6 +147,7 @@ ngx_stream_ebpf_create_srv_conf(ngx_conf_t *cf)
     conf->global_ctx = NGX_CONF_UNSET_PTR;
     conf->timeout = NGX_CONF_UNSET;
     conf->timer_period = NGX_CONF_UNSET;
+    conf->buffer_size = NGX_CONF_UNSET;
     return conf;
 }
 
@@ -153,6 +162,7 @@ ngx_stream_ebpf_merge_srv_conf(ngx_conf_t *cf, void *parent,
     ngx_conf_merge_value(conf->ebpf_enable, prev->ebpf_enable, 0);
     ngx_conf_merge_msec_value(conf->timeout, prev->timeout, 10 * 60000);
     ngx_conf_merge_msec_value(conf->timer_period, prev->timer_period, 2000);
+    ngx_conf_merge_msec_value(conf->buffer_size, prev->buffer_size, 16384);
 
     return NGX_CONF_OK;
 }
@@ -411,12 +421,15 @@ ngx_stream_ebpf_proxy_process(ngx_event_t *ev, ngx_int_t from_upstream)
     }
 
     ctx = ngx_stream_get_module_ctx(s, ngx_stream_ebpf_module);
-    
+    escf = ngx_stream_get_module_srv_conf(s, ngx_stream_ebpf_module);
+
     // whenerer it read from, just send it to peer, and remain on fly data will be forwarded by ebpf
 
     // I know it's ugly but it works...
     for(;;) {
         // read from client
+        ngx_log_debug(NGX_LOG_DEBUG_STREAM, c->log, 0, "ngx_stream_ebpf_proxy_process forwarding data from client");
+
         b = &u->downstream_buf;
         size = b->last - b->pos;
         if (size == 0) {
@@ -456,9 +469,23 @@ ngx_stream_ebpf_proxy_process(ngx_event_t *ev, ngx_int_t from_upstream)
     }
     
     for(;;) {
-        ngx_log_debug(NGX_LOG_DEBUG_STREAM, c->log, 0, "ngx_stream_ebpf_proxy_process read from upstream");
+        ngx_log_debug(NGX_LOG_DEBUG_STREAM, c->log, 0, "ngx_stream_ebpf_proxy_process forwarding data from upstream");
 
+
+        if (u->upstream_buf.start == NULL) {
+            u_char *p= ngx_pnalloc(c->pool, escf->buffer_size);
+            if (p == NULL) {
+                ngx_stream_ebpf_proxy_finalize(s, NGX_STREAM_INTERNAL_SERVER_ERROR);
+                return;
+            }
+
+            u->upstream_buf.start = p;
+            u->upstream_buf.end = p + escf->buffer_size;
+            u->upstream_buf.pos = p;
+            u->upstream_buf.last = p;
+        }
         b = &u->upstream_buf;
+
         size = b->last - b->pos;
         if (size == 0) {
             b->pos = b->start;
@@ -470,7 +497,7 @@ ngx_stream_ebpf_proxy_process(ngx_event_t *ev, ngx_int_t from_upstream)
             }
 
             if (n <= 0) {
-                ngx_log_error(NGX_LOG_NOTICE, c->log, n, "fail to read first packet from upstream");
+                ngx_log_error(NGX_LOG_NOTICE, c->log, n, "fail to read first packet from upstream, %d", n);
                 ngx_stream_ebpf_proxy_finalize(s, NGX_STREAM_OK);
                 return;
             }
@@ -486,7 +513,6 @@ ngx_stream_ebpf_proxy_process(ngx_event_t *ev, ngx_int_t from_upstream)
         }
         b->pos += n;
     }
-    escf = ngx_stream_get_module_srv_conf(s, ngx_stream_ebpf_module);
 
     // idle time out, set one side event is enough
     // will be flesh by ngx_stream_ebpf_timer_handler

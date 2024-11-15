@@ -204,6 +204,55 @@ Reverse mode, remote host 127.0.0.1 is sending
 ```  
 Now the speed is what we excepted.   
 
+## support ebpf cpu affinity  
+Currently, kernel does not support cpu affinity for sockmap. I modify the kernel and rebuild it.  
+Still, we bind iperf server to CPU5 and iperf client to CPU6, and then set sockmap to CPU10(should be bound to the cpu as same as the `worker_cpu_affinity` specify, but I just doing the test)  
+```
+	# both bpf_map_update_elem_opts and bpf_map_update_opts are new feature.
+	__u64 target_cpu = 10;
+        LIBBPF_OPTS(bpf_map_update_opts, opts);
+        opts.target_cpu = &target_cpu;
+        //if (bpf_map_update_elem(global_ctx->sockmap_fd, &idx, &fd, BPF_ANY) < 0) {
+        if (bpf_map_update_elem_opts(global_ctx->sockmap_fd, &idx, &fd, BPF_ANY, &opts) < 0) {
+        ......
+```
+
+```
+[root@]# iperf3 -p 10000 -c 127.0.0.1 -R  -A 6 -t 10
+Connecting to host 127.0.0.1, port 10000
+Reverse mode, remote host 127.0.0.1 is sending
+[  5] local 127.0.0.1 port 56518 connected to 127.0.0.1 port 10000
+[ ID] Interval           Transfer     Bitrate
+[  5]   0.00-1.00   sec  7.76 GBytes  66.6 Gbits/sec
+[  5]   1.00-2.00   sec  7.76 GBytes  66.7 Gbits/sec
+[  5]   2.00-3.00   sec  7.76 GBytes  66.7 Gbits/sec
+[  5]   3.00-4.00   sec  7.76 GBytes  66.7 Gbits/sec
+[  5]   4.00-5.00   sec  7.76 GBytes  66.7 Gbits/sec
+[  5]   5.00-6.00   sec  7.77 GBytes  66.7 Gbits/sec
+[  5]   6.00-7.00   sec  7.76 GBytes  66.7 Gbits/sec
+[  5]   7.00-8.00   sec  7.77 GBytes  66.7 Gbits/sec
+[  5]   8.00-9.00   sec  7.76 GBytes  66.7 Gbits/sec
+```
+The speed is very near to the direct mode(63 Gbits/sec)  
+
+```
+04:14:45 PM  CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest  %gnice   %idle
+04:14:46 PM  all    0.06    0.00    7.27    0.00    0.00    1.94    0.00    0.00    0.00   90.73
+04:14:46 PM    0    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00
+04:14:46 PM    1    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00
+04:14:46 PM    2    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00
+04:14:46 PM    3    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00
+04:14:46 PM    4    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00
+04:14:46 PM    5    0.00    0.00   73.74    0.00    0.00   26.26    0.00    0.00    0.00    0.00
+04:14:46 PM    6    2.06    0.00   93.81    0.00    0.00    4.12    0.00    0.00    0.00    0.00
+04:14:46 PM    7    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00
+04:14:46 PM    8    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00
+04:14:46 PM    9    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00    0.00  100.00
+04:14:46 PM   10    0.00    0.00   67.68    0.00    0.00   32.32    0.00    0.00    0.00    0.00
+```
+and the the CPU affinity works correctly.  
+
+
 ### why eBPF code running on the cpu which process the receive packet  
 The stream_verdict process will save received packet into `psock->ingress_skb` and call `schedule_delayed_work` with delay 0  
 ```
