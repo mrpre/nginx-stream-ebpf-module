@@ -7,7 +7,7 @@ Test success from nginx-1.15.0 to latest(nginx-1.27.0) with kernel version >= 4.
 Note that the latest kernel version (near 6.9) has defect with sockmap, I have send a patch to fix it, do not use
 latest kernel before it's merged and released.  
 
-patch: [https://git.kernel.org/bpf/bpf/c/2ce9abd6e1e1](https://github.com/torvalds/linux/commit/8ca2a1eeadf09862190b2810697702d803ceef2d)  
+patch: https://github.com/torvalds/linux/commit/8ca2a1eeadf09862190b2810697702d803ceef2d
 
 # Performance Test
 
@@ -175,7 +175,7 @@ Average:       6    0.50    0.00   73.00    0.00    0.50   26.00    0.00    0.00
 
 It's weird that only 2 cpu works with high load which both are bounded to iperf client and server. 
 
-`top` command indicate that ebpf code also run on CPU 0
+`top` command indicate that ebpf code also run on CPU 6
 ```
  170941 root      20   0       0      0      0 R  30.2   0.0   0:44.01 kworker/6:2+events
 ```  
@@ -234,6 +234,9 @@ Reverse mode, remote host 127.0.0.1 is sending
 [  5]   8.00-9.00   sec  7.76 GBytes  66.7 Gbits/sec
 ```
 The speed is very near to the direct mode(63 Gbits/sec)  
+
+The patch I send still on developing with community discussion.  
+I'm not sure whether it can be accepted but I will try my best because it's really useful.  
 
 ```
 04:14:45 PM  CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest  %gnice   %idle
