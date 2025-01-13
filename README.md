@@ -7,7 +7,7 @@ Test success from nginx-1.15.0 to latest(nginx-1.27.0) with kernel version >= 4.
 Note that the latest kernel version (near 6.9) has defect with sockmap, I have send a patch to fix it, do not use
 latest kernel before it's merged and released.  
 
-patch: https://git.kernel.org/bpf/bpf/c/2ce9abd6e1e1  
+patch: [https://git.kernel.org/bpf/bpf/c/2ce9abd6e1e1](https://github.com/torvalds/linux/commit/8ca2a1eeadf09862190b2810697702d803ceef2d)  
 
 # Performance Test
 
